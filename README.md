@@ -7,10 +7,11 @@ Firefox extension for `docs.google.com` that intercepts links containing a `?t=`
 - Runs only on `https://docs.google.com/*`
 - Intercepts normal left-clicks on links with a `t` query parameter
 - Opens redirected links in a new tab
+- Includes a compact on/off toggle beside `🔀` that disables both redirection and new mapping prompts
 - Stores mappings in `browser.storage.local` as normalized `source URL -> destination URL`
 - Removes `t` from both source and destination before storage, then reapplies the clicked `t` value during redirect
 - Prompts for a destination URL the first time a source URL is encountered
-- Adds a floating `Redirect Mappings` menu for viewing, editing, deleting, and hiding all extension UI
+- Adds a floating `🔀` button for viewing, editing, deleting, and hiding all extension UI
 - Restores hidden UI with `Alt+Shift+M`
 
 Example:

@@ -1,12 +1,16 @@
 (function () {
   const STORAGE_KEY = "redirectMappings";
+  const ENABLED_KEY = "redirectEnabled";
   const UI_ROOT_ID = "video-time-code-redirect-root";
   const LAUNCHER_ID = "video-time-code-redirect-launcher";
+  const TOGGLE_ID = "video-time-code-redirect-toggle";
   const PANEL_ID = "video-time-code-redirect-panel";
   const RESTORE_SHORTCUT = "Alt+Shift+M";
   let listContainer = null;
   let emptyState = null;
+  let enabledToggle = null;
   let isMenuOpen = false;
+  let isRedirectEnabled = true;
   let uiRoot = null;
 
   function isInterceptableClick(event) {
@@ -50,6 +54,29 @@
 
   async function saveMappings(mappings) {
     await browser.storage.local.set({ [STORAGE_KEY]: mappings });
+  }
+
+  async function getEnabledState() {
+    const stored = await browser.storage.local.get(ENABLED_KEY);
+
+    if (typeof stored[ENABLED_KEY] === "boolean") {
+      return stored[ENABLED_KEY];
+    }
+
+    return true;
+  }
+
+  async function saveEnabledState(enabled) {
+    await browser.storage.local.set({ [ENABLED_KEY]: enabled });
+  }
+
+  function updateEnabledUi() {
+    if (enabledToggle) {
+      enabledToggle.checked = isRedirectEnabled;
+      enabledToggle.title = isRedirectEnabled
+        ? "Disable redirects"
+        : "Enable redirects";
+    }
   }
 
   async function refreshMappingsList() {
@@ -151,6 +178,10 @@
   }
 
   async function ensureMapping(sourceKey) {
+    if (!isRedirectEnabled) {
+      return null;
+    }
+
     const mappings = await getMappings();
     const existingDestination = mappings[sourceKey];
 
@@ -182,6 +213,10 @@
   }
 
   async function redirectLink(originalUrl) {
+    if (!isRedirectEnabled) {
+      return false;
+    }
+
     const timeCode = originalUrl.searchParams.get("t");
 
     if (!timeCode) {
@@ -224,10 +259,21 @@
       #${UI_ROOT_ID} {
         position: fixed;
         top: 16px;
-        right: 16px;
+        left: 50%;
+        transform: translateX(-50%);
         z-index: 2147483647;
+        display: inline-flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
         font-family: Arial, sans-serif;
         color: #202124;
+      }
+
+      .vtr-compact-controls {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
       }
 
       #${LAUNCHER_ID} {
@@ -235,15 +281,56 @@
         border-radius: 999px;
         background: #1a73e8;
         color: #fff;
-        padding: 10px 14px;
+        width: 44px;
+        height: 44px;
+        padding: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 22px;
+        line-height: 1;
         cursor: pointer;
         box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+      }
+
+      #${TOGGLE_ID} {
+        appearance: none;
+        -webkit-appearance: none;
+        width: 38px;
+        height: 22px;
+        margin: 0;
+        border: 0;
+        border-radius: 999px;
+        background: #c4c7c5;
+        position: relative;
+        cursor: pointer;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12);
+        transition: background 120ms ease;
+      }
+
+      #${TOGGLE_ID}::before {
+        content: "";
+        position: absolute;
+        top: 3px;
+        left: 3px;
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        background: #fff;
+        transition: transform 120ms ease;
+      }
+
+      #${TOGGLE_ID}:checked {
+        background: #1a73e8;
+      }
+
+      #${TOGGLE_ID}:checked::before {
+        transform: translateX(16px);
       }
 
       #${PANEL_ID} {
         width: 420px;
         max-height: min(70vh, 640px);
-        margin-top: 10px;
         background: #fff;
         border: 1px solid #dadce0;
         border-radius: 12px;
@@ -261,6 +348,7 @@
         justify-content: space-between;
         padding: 14px 16px;
         border-bottom: 1px solid #eceff1;
+        gap: 12px;
       }
 
       .vtr-title {
@@ -352,10 +440,18 @@
     root.id = UI_ROOT_ID;
     uiRoot = root;
 
+    const compactControls = document.createElement("div");
+    compactControls.className = "vtr-compact-controls";
+
     const launcher = document.createElement("button");
     launcher.id = LAUNCHER_ID;
     launcher.type = "button";
-    launcher.textContent = "Redirect Mappings";
+    launcher.textContent = "🔀";
+    launcher.title = "Open redirect mappings";
+
+    enabledToggle = document.createElement("input");
+    enabledToggle.id = TOGGLE_ID;
+    enabledToggle.type = "checkbox";
 
     const panel = document.createElement("section");
     panel.id = PANEL_ID;
@@ -383,11 +479,14 @@
 
     listContainer = document.createElement("div");
 
+    compactControls.append(launcher, enabledToggle);
     header.append(title, closeButton);
     content.append(emptyState, listContainer);
     panel.append(header, content);
-    root.append(createStyle(), launcher, panel);
+    root.append(createStyle(), compactControls, panel);
     document.documentElement.append(root);
+
+    updateEnabledUi();
 
     launcher.addEventListener("click", () => {
       isMenuOpen = !isMenuOpen;
@@ -398,6 +497,14 @@
           console.error("Failed to load mappings:", error);
         });
       }
+    });
+
+    enabledToggle.addEventListener("change", () => {
+      isRedirectEnabled = enabledToggle.checked;
+      updateEnabledUi();
+      saveEnabledState(isRedirectEnabled).catch((error) => {
+        console.error("Failed to save enabled state:", error);
+      });
     });
 
     closeButton.addEventListener("click", () => {
@@ -422,18 +529,31 @@
   }
 
   browser.storage.onChanged.addListener((changes, areaName) => {
-    if (
-      areaName === "local" &&
-      changes[STORAGE_KEY] &&
-      isMenuOpen
-    ) {
+    if (areaName !== "local") {
+      return;
+    }
+
+    if (changes[ENABLED_KEY]) {
+      isRedirectEnabled = changes[ENABLED_KEY].newValue !== false;
+      updateEnabledUi();
+    }
+
+    if (changes[STORAGE_KEY] && isMenuOpen) {
       refreshMappingsList().catch((error) => {
         console.error("Failed to refresh mappings:", error);
       });
     }
   });
 
-  ensureUiReady();
+  getEnabledState()
+    .then((enabled) => {
+      isRedirectEnabled = enabled;
+      ensureUiReady();
+    })
+    .catch((error) => {
+      console.error("Failed to load enabled state:", error);
+      ensureUiReady();
+    });
 
   document.addEventListener("keydown", (event) => {
     if (event.altKey && event.shiftKey && !event.ctrlKey && !event.metaKey && event.key.toLowerCase() === "m") {
@@ -456,7 +576,11 @@
 
       const originalUrl = parseUrl(anchor.href);
 
-      if (!originalUrl || !originalUrl.searchParams.has("t")) {
+      if (
+        !isRedirectEnabled ||
+        !originalUrl ||
+        !originalUrl.searchParams.has("t")
+      ) {
         return;
       }
 
