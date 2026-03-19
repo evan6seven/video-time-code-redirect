@@ -1,0 +1,473 @@
+(function () {
+  const STORAGE_KEY = "redirectMappings";
+  const UI_ROOT_ID = "video-time-code-redirect-root";
+  const LAUNCHER_ID = "video-time-code-redirect-launcher";
+  const PANEL_ID = "video-time-code-redirect-panel";
+  const RESTORE_SHORTCUT = "Alt+Shift+M";
+  let listContainer = null;
+  let emptyState = null;
+  let isMenuOpen = false;
+  let uiRoot = null;
+
+  function isInterceptableClick(event) {
+    return (
+      event.button === 0 &&
+      !event.defaultPrevented &&
+      !event.metaKey &&
+      !event.ctrlKey &&
+      !event.shiftKey &&
+      !event.altKey
+    );
+  }
+
+  function findAnchor(target) {
+    if (!(target instanceof Element)) {
+      return null;
+    }
+
+    return target.closest("a[href]");
+  }
+
+  function parseUrl(rawUrl) {
+    try {
+      return new URL(rawUrl, window.location.href);
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function normalizeUrl(url) {
+    const normalized = new URL(url.toString());
+    normalized.searchParams.delete("t");
+    normalized.hash = "";
+    return normalized.toString();
+  }
+
+  async function getMappings() {
+    const stored = await browser.storage.local.get(STORAGE_KEY);
+    return stored[STORAGE_KEY] || {};
+  }
+
+  async function saveMappings(mappings) {
+    await browser.storage.local.set({ [STORAGE_KEY]: mappings });
+  }
+
+  async function refreshMappingsList() {
+    if (!listContainer || !emptyState) {
+      return;
+    }
+
+    const mappings = await getMappings();
+    const entries = Object.entries(mappings).sort(([left], [right]) =>
+      left.localeCompare(right)
+    );
+
+    listContainer.textContent = "";
+    emptyState.hidden = entries.length > 0;
+
+    for (const [source, destination] of entries) {
+      const row = document.createElement("div");
+      row.className = "vtr-row";
+
+      const textBlock = document.createElement("div");
+      textBlock.className = "vtr-text";
+
+      const sourceLabel = document.createElement("div");
+      sourceLabel.className = "vtr-source";
+      sourceLabel.textContent = source;
+      sourceLabel.title = source;
+
+      const destinationLabel = document.createElement("div");
+      destinationLabel.className = "vtr-destination";
+      destinationLabel.textContent = destination;
+      destinationLabel.title = destination;
+
+      const actions = document.createElement("div");
+      actions.className = "vtr-actions";
+
+      const editButton = document.createElement("button");
+      editButton.type = "button";
+      editButton.className = "vtr-action-button";
+      editButton.textContent = "Edit";
+      editButton.addEventListener("click", () => {
+        editMapping(source, destination).catch((error) => {
+          console.error("Failed to edit mapping:", error);
+        });
+      });
+
+      const deleteButton = document.createElement("button");
+      deleteButton.type = "button";
+      deleteButton.className = "vtr-action-button vtr-delete-button";
+      deleteButton.textContent = "Delete";
+      deleteButton.addEventListener("click", () => {
+        deleteMapping(source).catch((error) => {
+          console.error("Failed to delete mapping:", error);
+        });
+      });
+
+      textBlock.append(sourceLabel, destinationLabel);
+      actions.append(editButton, deleteButton);
+      row.append(textBlock, actions);
+      listContainer.append(row);
+    }
+  }
+
+  async function editMapping(source, destination) {
+    const userInput = window.prompt(
+      `Update destination URL for:\n${source}`,
+      destination
+    );
+
+    if (userInput === null) {
+      return;
+    }
+
+    const parsedDestination = parseUrl(userInput.trim());
+
+    if (!parsedDestination) {
+      window.alert("The destination URL is invalid.");
+      return;
+    }
+
+    const mappings = await getMappings();
+    mappings[source] = normalizeUrl(parsedDestination);
+    await saveMappings(mappings);
+    await refreshMappingsList();
+  }
+
+  async function deleteMapping(source) {
+    const confirmed = window.confirm(
+      `Delete redirect mapping for:\n${source}`
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    const mappings = await getMappings();
+    delete mappings[source];
+    await saveMappings(mappings);
+    await refreshMappingsList();
+  }
+
+  async function ensureMapping(sourceKey) {
+    const mappings = await getMappings();
+    const existingDestination = mappings[sourceKey];
+
+    if (existingDestination) {
+      return existingDestination;
+    }
+
+    const userInput = window.prompt(
+      "No redirect mapping exists for this link yet.\n\nEnter the destination URL to use for future redirects:"
+    );
+
+    if (!userInput) {
+      return null;
+    }
+
+    const parsedDestination = parseUrl(userInput.trim());
+
+    if (!parsedDestination) {
+      window.alert("The destination URL is invalid.");
+      return null;
+    }
+
+    const destinationKey = normalizeUrl(parsedDestination);
+    mappings[sourceKey] = destinationKey;
+    await saveMappings(mappings);
+    await refreshMappingsList();
+
+    return destinationKey;
+  }
+
+  async function redirectLink(originalUrl) {
+    const timeCode = originalUrl.searchParams.get("t");
+
+    if (!timeCode) {
+      return false;
+    }
+
+    const sourceKey = normalizeUrl(originalUrl);
+    const destinationUrl = await ensureMapping(sourceKey);
+
+    if (!destinationUrl) {
+      return true;
+    }
+
+    const finalUrl = new URL(destinationUrl);
+    finalUrl.searchParams.set("t", timeCode);
+    window.open(finalUrl.toString(), "_blank", "noopener");
+    return true;
+  }
+
+  function showUi() {
+    if (!uiRoot) {
+      return;
+    }
+
+    uiRoot.hidden = false;
+  }
+
+  function hideUi() {
+    if (!uiRoot) {
+      return;
+    }
+
+    isMenuOpen = false;
+    uiRoot.hidden = true;
+  }
+
+  function createStyle() {
+    const style = document.createElement("style");
+    style.textContent = `
+      #${UI_ROOT_ID} {
+        position: fixed;
+        top: 16px;
+        right: 16px;
+        z-index: 2147483647;
+        font-family: Arial, sans-serif;
+        color: #202124;
+      }
+
+      #${LAUNCHER_ID} {
+        border: 0;
+        border-radius: 999px;
+        background: #1a73e8;
+        color: #fff;
+        padding: 10px 14px;
+        cursor: pointer;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+      }
+
+      #${PANEL_ID} {
+        width: 420px;
+        max-height: min(70vh, 640px);
+        margin-top: 10px;
+        background: #fff;
+        border: 1px solid #dadce0;
+        border-radius: 12px;
+        box-shadow: 0 12px 32px rgba(0, 0, 0, 0.2);
+        overflow: hidden;
+      }
+
+      #${PANEL_ID}[hidden] {
+        display: none;
+      }
+
+      .vtr-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 14px 16px;
+        border-bottom: 1px solid #eceff1;
+      }
+
+      .vtr-title {
+        font-size: 14px;
+        font-weight: 700;
+      }
+
+      .vtr-close-button,
+      .vtr-action-button {
+        border: 1px solid #dadce0;
+        background: #fff;
+        color: #202124;
+        border-radius: 8px;
+        padding: 7px 10px;
+        cursor: pointer;
+      }
+
+      .vtr-close-button:hover,
+      .vtr-action-button:hover,
+      #${LAUNCHER_ID}:hover {
+        filter: brightness(0.97);
+      }
+
+      .vtr-content {
+        padding: 12px;
+        overflow: auto;
+        max-height: calc(min(70vh, 640px) - 56px);
+      }
+
+      .vtr-empty {
+        padding: 24px 12px;
+        text-align: center;
+        color: #5f6368;
+        font-size: 13px;
+      }
+
+      .vtr-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 12px;
+        align-items: start;
+        padding: 12px;
+        border: 1px solid #eceff1;
+        border-radius: 10px;
+      }
+
+      .vtr-row + .vtr-row {
+        margin-top: 10px;
+      }
+
+      .vtr-text {
+        min-width: 0;
+      }
+
+      .vtr-source,
+      .vtr-destination {
+        overflow-wrap: anywhere;
+        font-size: 12px;
+        line-height: 1.5;
+      }
+
+      .vtr-source {
+        font-weight: 700;
+      }
+
+      .vtr-destination {
+        color: #5f6368;
+        margin-top: 4px;
+      }
+
+      .vtr-actions {
+        display: flex;
+        gap: 8px;
+      }
+
+      .vtr-delete-button {
+        color: #b3261e;
+      }
+    `;
+    return style;
+  }
+
+  function createUi() {
+    if (document.getElementById(UI_ROOT_ID)) {
+      return;
+    }
+
+    const root = document.createElement("div");
+    root.id = UI_ROOT_ID;
+    uiRoot = root;
+
+    const launcher = document.createElement("button");
+    launcher.id = LAUNCHER_ID;
+    launcher.type = "button";
+    launcher.textContent = "Redirect Mappings";
+
+    const panel = document.createElement("section");
+    panel.id = PANEL_ID;
+    panel.hidden = true;
+
+    const header = document.createElement("div");
+    header.className = "vtr-header";
+
+    const title = document.createElement("div");
+    title.className = "vtr-title";
+    title.textContent = "Saved Redirect Mappings";
+
+    const closeButton = document.createElement("button");
+    closeButton.type = "button";
+    closeButton.className = "vtr-close-button";
+    closeButton.textContent = "Hide UI";
+    closeButton.title = `Hide all extension controls. Press ${RESTORE_SHORTCUT} to restore them.`;
+
+    const content = document.createElement("div");
+    content.className = "vtr-content";
+
+    emptyState = document.createElement("div");
+    emptyState.className = "vtr-empty";
+    emptyState.textContent = "No mappings saved yet.";
+
+    listContainer = document.createElement("div");
+
+    header.append(title, closeButton);
+    content.append(emptyState, listContainer);
+    panel.append(header, content);
+    root.append(createStyle(), launcher, panel);
+    document.documentElement.append(root);
+
+    launcher.addEventListener("click", () => {
+      isMenuOpen = !isMenuOpen;
+      panel.hidden = !isMenuOpen;
+
+      if (isMenuOpen) {
+        refreshMappingsList().catch((error) => {
+          console.error("Failed to load mappings:", error);
+        });
+      }
+    });
+
+    closeButton.addEventListener("click", () => {
+      panel.hidden = true;
+      hideUi();
+    });
+  }
+
+  function ensureUiReady() {
+    if (document.body) {
+      createUi();
+      return;
+    }
+
+    document.addEventListener(
+      "DOMContentLoaded",
+      () => {
+        createUi();
+      },
+      { once: true }
+    );
+  }
+
+  browser.storage.onChanged.addListener((changes, areaName) => {
+    if (
+      areaName === "local" &&
+      changes[STORAGE_KEY] &&
+      isMenuOpen
+    ) {
+      refreshMappingsList().catch((error) => {
+        console.error("Failed to refresh mappings:", error);
+      });
+    }
+  });
+
+  ensureUiReady();
+
+  document.addEventListener("keydown", (event) => {
+    if (event.altKey && event.shiftKey && !event.ctrlKey && !event.metaKey && event.key.toLowerCase() === "m") {
+      showUi();
+    }
+  });
+
+  document.addEventListener(
+    "click",
+    (event) => {
+      if (!isInterceptableClick(event)) {
+        return;
+      }
+
+      const anchor = findAnchor(event.target);
+
+      if (!anchor || anchor.closest(`#${UI_ROOT_ID}`)) {
+        return;
+      }
+
+      const originalUrl = parseUrl(anchor.href);
+
+      if (!originalUrl || !originalUrl.searchParams.has("t")) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      redirectLink(originalUrl).catch((error) => {
+        console.error("Video Time Code Redirect failed:", error);
+        window.open(originalUrl.toString(), "_blank", "noopener");
+      });
+    },
+    true
+  );
+})();
