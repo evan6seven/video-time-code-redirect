@@ -9,6 +9,7 @@
   let listContainer = null;
   let emptyState = null;
   let enabledToggle = null;
+  let deleteAllButton = null;
   let isMenuOpen = false;
   let isRedirectEnabled = true;
   let uiRoot = null;
@@ -92,6 +93,10 @@
     listContainer.textContent = "";
     emptyState.hidden = entries.length > 0;
 
+    if (deleteAllButton) {
+      deleteAllButton.disabled = entries.length === 0;
+    }
+
     for (const [source, destination] of entries) {
       const row = document.createElement("div");
       row.className = "vtr-row";
@@ -174,6 +179,26 @@
     const mappings = await getMappings();
     delete mappings[source];
     await saveMappings(mappings);
+    await refreshMappingsList();
+  }
+
+  async function deleteAllMappings() {
+    const mappings = await getMappings();
+    const entryCount = Object.keys(mappings).length;
+
+    if (entryCount === 0) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Delete all ${entryCount} saved redirect mapping${entryCount === 1 ? "" : "s"}?`
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    await saveMappings({});
     await refreshMappingsList();
   }
 
@@ -356,7 +381,12 @@
         font-weight: 700;
       }
 
-      .vtr-close-button,
+      .vtr-header-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
       .vtr-action-button {
         border: 1px solid #dadce0;
         background: #fff;
@@ -366,7 +396,11 @@
         cursor: pointer;
       }
 
-      .vtr-close-button:hover,
+      .vtr-action-button:disabled {
+        opacity: 0.55;
+        cursor: default;
+      }
+
       .vtr-action-button:hover,
       #${LAUNCHER_ID}:hover {
         filter: brightness(0.97);
@@ -464,11 +498,14 @@
     title.className = "vtr-title";
     title.textContent = "Saved Redirect Mappings";
 
-    const closeButton = document.createElement("button");
-    closeButton.type = "button";
-    closeButton.className = "vtr-close-button";
-    closeButton.textContent = "Hide UI";
-    closeButton.title = `Hide all extension controls. Press ${RESTORE_SHORTCUT} to restore them.`;
+    const headerActions = document.createElement("div");
+    headerActions.className = "vtr-header-actions";
+
+    deleteAllButton = document.createElement("button");
+    deleteAllButton.type = "button";
+    deleteAllButton.className = "vtr-action-button vtr-delete-button";
+    deleteAllButton.textContent = "Delete All";
+    deleteAllButton.disabled = true;
 
     const content = document.createElement("div");
     content.className = "vtr-content";
@@ -480,7 +517,8 @@
     listContainer = document.createElement("div");
 
     compactControls.append(launcher, enabledToggle);
-    header.append(title, closeButton);
+    headerActions.append(deleteAllButton);
+    header.append(title, headerActions);
     content.append(emptyState, listContainer);
     panel.append(header, content);
     root.append(createStyle(), compactControls, panel);
@@ -507,9 +545,10 @@
       });
     });
 
-    closeButton.addEventListener("click", () => {
-      panel.hidden = true;
-      hideUi();
+    deleteAllButton.addEventListener("click", () => {
+      deleteAllMappings().catch((error) => {
+        console.error("Failed to delete all mappings:", error);
+      });
     });
   }
 

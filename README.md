@@ -11,8 +11,7 @@ Firefox extension for `docs.google.com` that intercepts links containing a `?t=`
 - Stores mappings in `browser.storage.local` as normalized `source URL -> destination URL`
 - Removes `t` from both source and destination before storage, then reapplies the clicked `t` value during redirect
 - Prompts for a destination URL the first time a source URL is encountered
-- Adds a floating `🔀` button for viewing, editing, deleting, and hiding all extension UI
-- Restores hidden UI with `Alt+Shift+M`
+- Adds a floating `🔀` button for viewing, editing, deleting individual mappings, and deleting all mappings
 
 Example:
 
