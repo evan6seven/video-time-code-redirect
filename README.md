@@ -32,7 +32,7 @@ after saving the mapping:
 
 1. Open `about:debugging#/runtime/this-firefox`
 2. Click `Load Temporary Add-on...`
-3. Select [manifest.json](/Users/mainuser/Code/Browser Extensions/Video time code redirect/manifest.json)
+3. Select [manifest.json](https://github.com/evan6seven/video-time-code-redirect/blob/main/manifest.json)
 
 ## Import Into Tampermonkey
 
