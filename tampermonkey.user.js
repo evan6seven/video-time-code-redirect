@@ -1,12 +1,16 @@
 // ==UserScript==
 // @name         Video Time Code Redirect
 // @namespace    https://example.local/video-time-code-redirect
-// @version      0.1.0
+// @version      0.2.0
 // @description  Redirect timestamped links on docs.google.com using saved source-to-destination mappings.
 // @match        https://docs.google.com/*
 // @downloadURL  https://raw.githubusercontent.com/evan6seven/video-time-code-redirect/main/tampermonkey.user.js
 // @updateURL    https://raw.githubusercontent.com/evan6seven/video-time-code-redirect/main/tampermonkey.user.js
 // @run-at       document-start
+// @inject-into  content
+// @grant        GM.getValue
+// @grant        GM.setValue
+// @grant        GM.openInTab
 // @grant        GM_getValue
 // @grant        GM_setValue
 // ==/UserScript==
@@ -63,20 +67,52 @@
     return normalized.toString();
   }
 
-  function getMappings() {
-    return GM_getValue(STORAGE_KEY, {});
+  async function getStoredValue(key, defaultValue) {
+    if (typeof GM !== "undefined" && typeof GM.getValue === "function") {
+      return GM.getValue(key, defaultValue);
+    }
+
+    if (typeof GM_getValue === "function") {
+      return GM_getValue(key, defaultValue);
+    }
+
+    return defaultValue;
   }
 
-  function saveMappings(mappings) {
-    GM_setValue(STORAGE_KEY, mappings);
+  async function setStoredValue(key, value) {
+    if (typeof GM !== "undefined" && typeof GM.setValue === "function") {
+      await GM.setValue(key, value);
+      return;
+    }
+
+    if (typeof GM_setValue === "function") {
+      GM_setValue(key, value);
+    }
   }
 
-  function getEnabledState() {
-    return GM_getValue(ENABLED_KEY, true);
+  async function openInNewTab(url) {
+    if (typeof GM !== "undefined" && typeof GM.openInTab === "function") {
+      await GM.openInTab(url, false);
+      return;
+    }
+
+    window.open(url, "_blank", "noopener");
   }
 
-  function saveEnabledState(enabled) {
-    GM_setValue(ENABLED_KEY, enabled);
+  async function getMappings() {
+    return getStoredValue(STORAGE_KEY, {});
+  }
+
+  async function saveMappings(mappings) {
+    await setStoredValue(STORAGE_KEY, mappings);
+  }
+
+  async function getEnabledState() {
+    return getStoredValue(ENABLED_KEY, true);
+  }
+
+  async function saveEnabledState(enabled) {
+    await setStoredValue(ENABLED_KEY, enabled);
   }
 
   function updateEnabledUi() {
@@ -88,12 +124,12 @@
     }
   }
 
-  function refreshMappingsList() {
+  async function refreshMappingsList() {
     if (!listContainer || !emptyState) {
       return;
     }
 
-    const mappings = getMappings();
+    const mappings = await getMappings();
     const entries = Object.entries(mappings).sort(([left], [right]) =>
       left.localeCompare(right)
     );
@@ -130,7 +166,9 @@
       editButton.className = "vtr-action-button";
       editButton.textContent = "Edit";
       editButton.addEventListener("click", () => {
-        editMapping(source, destination);
+        editMapping(source, destination).catch((error) => {
+          console.error("Video Time Code Redirect failed to edit mapping:", error);
+        });
       });
 
       const deleteButton = document.createElement("button");
@@ -138,7 +176,9 @@
       deleteButton.className = "vtr-action-button vtr-delete-button";
       deleteButton.textContent = "Delete";
       deleteButton.addEventListener("click", () => {
-        deleteMapping(source);
+        deleteMapping(source).catch((error) => {
+          console.error("Video Time Code Redirect failed to delete mapping:", error);
+        });
       });
 
       textBlock.append(sourceLabel, destinationLabel);
@@ -148,7 +188,7 @@
     }
   }
 
-  function editMapping(source, destination) {
+  async function editMapping(source, destination) {
     const userInput = window.prompt(
       `Update destination URL for:\n${source}`,
       destination
@@ -165,13 +205,13 @@
       return;
     }
 
-    const mappings = getMappings();
+    const mappings = await getMappings();
     mappings[source] = normalizeUrl(parsedDestination);
-    saveMappings(mappings);
-    refreshMappingsList();
+    await saveMappings(mappings);
+    await refreshMappingsList();
   }
 
-  function deleteMapping(source) {
+  async function deleteMapping(source) {
     const confirmed = window.confirm(
       `Delete redirect mapping for:\n${source}`
     );
@@ -180,14 +220,14 @@
       return;
     }
 
-    const mappings = getMappings();
+    const mappings = await getMappings();
     delete mappings[source];
-    saveMappings(mappings);
-    refreshMappingsList();
+    await saveMappings(mappings);
+    await refreshMappingsList();
   }
 
-  function deleteAllMappings() {
-    const mappings = getMappings();
+  async function deleteAllMappings() {
+    const mappings = await getMappings();
     const entryCount = Object.keys(mappings).length;
 
     if (entryCount === 0) {
@@ -202,16 +242,16 @@
       return;
     }
 
-    saveMappings({});
-    refreshMappingsList();
+    await saveMappings({});
+    await refreshMappingsList();
   }
 
-  function ensureMapping(sourceKey) {
+  async function ensureMapping(sourceKey) {
     if (!isRedirectEnabled) {
       return null;
     }
 
-    const mappings = getMappings();
+    const mappings = await getMappings();
     const existingDestination = mappings[sourceKey];
 
     if (existingDestination) {
@@ -235,13 +275,13 @@
 
     const destinationKey = normalizeUrl(parsedDestination);
     mappings[sourceKey] = destinationKey;
-    saveMappings(mappings);
-    refreshMappingsList();
+    await saveMappings(mappings);
+    await refreshMappingsList();
 
     return destinationKey;
   }
 
-  function redirectLink(originalUrl) {
+  async function redirectLink(originalUrl) {
     if (!isRedirectEnabled) {
       return false;
     }
@@ -253,7 +293,7 @@
     }
 
     const sourceKey = normalizeUrl(originalUrl);
-    const destinationUrl = ensureMapping(sourceKey);
+    const destinationUrl = await ensureMapping(sourceKey);
 
     if (!destinationUrl) {
       return true;
@@ -261,7 +301,7 @@
 
     const finalUrl = new URL(destinationUrl);
     finalUrl.searchParams.set("t", timeCode);
-    window.open(finalUrl.toString(), "_blank", "noopener");
+    await openInNewTab(finalUrl.toString());
     return true;
   }
 
@@ -526,18 +566,24 @@
       panel.hidden = !isMenuOpen;
 
       if (isMenuOpen) {
-        refreshMappingsList();
+        refreshMappingsList().catch((error) => {
+          console.error("Video Time Code Redirect failed to refresh mappings:", error);
+        });
       }
     });
 
     enabledToggle.addEventListener("change", () => {
       isRedirectEnabled = enabledToggle.checked;
       updateEnabledUi();
-      saveEnabledState(isRedirectEnabled);
+      saveEnabledState(isRedirectEnabled).catch((error) => {
+        console.error("Video Time Code Redirect failed to save enabled state:", error);
+      });
     });
 
     deleteAllButton.addEventListener("click", () => {
-      deleteAllMappings();
+      deleteAllMappings().catch((error) => {
+        console.error("Video Time Code Redirect failed to delete mappings:", error);
+      });
     });
   }
 
@@ -556,7 +602,14 @@
     );
   }
 
-  isRedirectEnabled = getEnabledState();
+  getEnabledState()
+    .then((enabled) => {
+      isRedirectEnabled = enabled;
+      updateEnabledUi();
+    })
+    .catch((error) => {
+      console.error("Video Time Code Redirect failed to load enabled state:", error);
+    });
   ensureUiReady();
 
   document.addEventListener("keydown", (event) => {
@@ -573,7 +626,7 @@
 
   document.addEventListener(
     "click",
-    (event) => {
+    async (event) => {
       if (!isInterceptableClick(event)) {
         return;
       }
@@ -598,10 +651,10 @@
       event.stopPropagation();
 
       try {
-        redirectLink(originalUrl);
+        await redirectLink(originalUrl);
       } catch (error) {
         console.error("Video Time Code Redirect failed:", error);
-        window.open(originalUrl.toString(), "_blank", "noopener");
+        await openInNewTab(originalUrl.toString());
       }
     },
     true

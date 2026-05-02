@@ -1,6 +1,6 @@
 # Video Time Code Redirect
 
-Tampermonkey userscript for `docs.google.com` that intercepts links containing a `?t=` query parameter, looks up a stored redirect target, and forwards the user while preserving the timestamp.
+Userscript for `docs.google.com` that intercepts links containing a `?t=` query parameter, looks up a stored redirect target, and forwards the user while preserving the timestamp.
 
 ## Behavior
 
@@ -9,7 +9,7 @@ Tampermonkey userscript for `docs.google.com` that intercepts links containing a
 - Opens redirected links in a new tab
 - Includes a compact on/off toggle beside `🔀` that disables both redirection and new mapping prompts
 - Stores mappings as normalized `source URL -> destination URL`
-- Uses Tampermonkey script storage
+- Uses userscript-manager storage, preferring modern async `GM.*` APIs with legacy `GM_*` fallbacks
 - Removes `t` from both source and destination before storage, then reapplies the clicked `t` value during redirect
 - Prompts for a destination URL the first time a source URL is encountered
 - Adds a floating `🔀` button for viewing, editing, deleting individual mappings, and deleting all mappings
@@ -26,9 +26,17 @@ after saving the mapping:
 
 `https://youtu.be/7bX9Wztjp3o` -> `https://kick.com/destiny/videos/4afad2ff-48f5-4399-8aa9-dff1ae8f685d`
 
-## Import Into Tampermonkey
+## Compatibility
 
-1. Open Tampermonkey
-2. Choose `Utilities`
-3. Use `Install from URL`
-4. Paste `https://raw.githubusercontent.com/evan6seven/video-time-code-redirect/main/tampermonkey.user.js`
+- Tampermonkey
+- Violentmonkey
+- Userscripts Safari (`quoid/userscripts`)
+- Other userscript managers that support either `GM.getValue` / `GM.setValue` or `GM_getValue` / `GM_setValue`
+
+For Userscripts Safari, the script includes `@inject-into content` because `GM` APIs are only available in the content script scope.
+
+## Import Into A Userscript Manager
+
+1. Open your userscript manager
+2. Choose the option to install from a URL
+3. Paste `https://raw.githubusercontent.com/evan6seven/video-time-code-redirect/main/tampermonkey.user.js`
