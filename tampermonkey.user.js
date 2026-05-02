@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Video Time Code Redirect
 // @namespace    https://example.local/video-time-code-redirect
-// @version      0.2.0
+// @version      0.2.1
 // @description  Redirect timestamped links on docs.google.com using saved source-to-destination mappings.
 // @match        https://docs.google.com/*
 // @downloadURL  https://raw.githubusercontent.com/evan6seven/video-time-code-redirect/main/tampermonkey.user.js
@@ -25,6 +25,7 @@
   const TOGGLE_ID = "video-time-code-redirect-toggle";
   const PANEL_ID = "video-time-code-redirect-panel";
   const RESTORE_SHORTCUT = "Alt+Shift+M";
+  const isTopWindow = window.top === window;
   let listContainer = null;
   let emptyState = null;
   let enabledToggle = null;
@@ -501,7 +502,10 @@
   }
 
   function createUi() {
-    if (document.getElementById(UI_ROOT_ID)) {
+    const existingRoot = document.getElementById(UI_ROOT_ID);
+
+    if (existingRoot) {
+      uiRoot = existingRoot;
       return;
     }
 
@@ -610,19 +614,21 @@
     .catch((error) => {
       console.error("Video Time Code Redirect failed to load enabled state:", error);
     });
-  ensureUiReady();
+  if (isTopWindow) {
+    ensureUiReady();
 
-  document.addEventListener("keydown", (event) => {
-    if (
-      event.altKey &&
-      event.shiftKey &&
-      !event.ctrlKey &&
-      !event.metaKey &&
-      event.key.toLowerCase() === "m"
-    ) {
-      showUi();
-    }
-  });
+    document.addEventListener("keydown", (event) => {
+      if (
+        event.altKey &&
+        event.shiftKey &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        event.key.toLowerCase() === "m"
+      ) {
+        showUi();
+      }
+    });
+  }
 
   document.addEventListener(
     "click",
