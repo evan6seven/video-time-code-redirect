@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         Video Time Code Redirect
 // @namespace    https://example.local/video-time-code-redirect
-// @version      0.2.1
+// @version      0.2.3
 // @description  Redirect timestamped links on docs.google.com using saved source-to-destination mappings.
-// @match        https://docs.google.com/*
+// @match        https://docs.google.com/spreadsheets/*
 // @downloadURL  https://raw.githubusercontent.com/evan6seven/video-time-code-redirect/main/tampermonkey.user.js
 // @updateURL    https://raw.githubusercontent.com/evan6seven/video-time-code-redirect/main/tampermonkey.user.js
 // @run-at       document-start
@@ -25,7 +25,9 @@
   const TOGGLE_ID = "video-time-code-redirect-toggle";
   const PANEL_ID = "video-time-code-redirect-panel";
   const RESTORE_SHORTCUT = "Alt+Shift+M";
+  const REQUIRED_SHEET_TAB_NAME = "Landing Page";
   const isTopWindow = window.top === window;
+  let hasRequiredSheetTab = false;
   let listContainer = null;
   let emptyState = null;
   let enabledToggle = null;
@@ -66,6 +68,67 @@
     normalized.searchParams.delete("t");
     normalized.hash = "";
     return normalized.toString();
+  }
+
+  function getTopDocument() {
+    try {
+      return window.top.document;
+    } catch (error) {
+      return document;
+    }
+  }
+
+  function hasLandingPageSheetTab(rootDocument = document) {
+    if (!rootDocument.body) {
+      return false;
+    }
+
+    const candidates = rootDocument.querySelectorAll(
+      "button, [role='button'], [role='tab'], [role='menuitem'], a"
+    );
+
+    return Array.from(candidates).some((element) => {
+      const text = element.textContent.trim();
+      const label = element.getAttribute("aria-label") || "";
+
+      return text === REQUIRED_SHEET_TAB_NAME || label === REQUIRED_SHEET_TAB_NAME;
+    });
+  }
+
+  function waitForLandingPageSheetTab() {
+    const rootDocument = getTopDocument();
+
+    if (hasLandingPageSheetTab(rootDocument)) {
+      hasRequiredSheetTab = true;
+      return Promise.resolve(true);
+    }
+
+    return new Promise((resolve) => {
+      const target = rootDocument.body || rootDocument.documentElement;
+
+      if (!target) {
+        resolve(false);
+        return;
+      }
+
+      const observer = new MutationObserver(() => {
+        if (hasLandingPageSheetTab(rootDocument)) {
+          hasRequiredSheetTab = true;
+          observer.disconnect();
+          resolve(true);
+        }
+      });
+
+      observer.observe(target, {
+        childList: true,
+        subtree: true,
+      });
+
+      window.setTimeout(() => {
+        observer.disconnect();
+        resolve(false);
+      }, 15000);
+    });
   }
 
   async function getStoredValue(key, defaultValue) {
@@ -615,18 +678,24 @@
       console.error("Video Time Code Redirect failed to load enabled state:", error);
     });
   if (isTopWindow) {
-    ensureUiReady();
-
-    document.addEventListener("keydown", (event) => {
-      if (
-        event.altKey &&
-        event.shiftKey &&
-        !event.ctrlKey &&
-        !event.metaKey &&
-        event.key.toLowerCase() === "m"
-      ) {
-        showUi();
+    waitForLandingPageSheetTab().then((shouldEnable) => {
+      if (!shouldEnable) {
+        return;
       }
+
+      ensureUiReady();
+
+      document.addEventListener("keydown", (event) => {
+        if (
+          event.altKey &&
+          event.shiftKey &&
+          !event.ctrlKey &&
+          !event.metaKey &&
+          event.key.toLowerCase() === "m"
+        ) {
+          showUi();
+        }
+      });
     });
   }
 
@@ -636,6 +705,12 @@
       if (!isInterceptableClick(event)) {
         return;
       }
+
+      if (!hasRequiredSheetTab && !hasLandingPageSheetTab(getTopDocument())) {
+        return;
+      }
+
+      hasRequiredSheetTab = true;
 
       const anchor = findAnchor(event.target);
 
