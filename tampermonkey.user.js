@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Video Time Code Redirect
 // @namespace    https://example.local/video-time-code-redirect
-// @version      0.2.3
+// @version      0.2.4
 // @description  Redirect timestamped links on docs.google.com using saved source-to-destination mappings.
 // @match        https://docs.google.com/spreadsheets/*
 // @downloadURL  https://raw.githubusercontent.com/evan6seven/video-time-code-redirect/main/tampermonkey.user.js
@@ -78,25 +78,40 @@
     }
   }
 
+  function normalizeText(value) {
+    return value.replace(/\s+/g, " ").trim();
+  }
+
   function hasLandingPageSheetTab(rootDocument = document) {
     if (!rootDocument.body) {
       return false;
     }
 
     const candidates = rootDocument.querySelectorAll(
-      "button, [role='button'], [role='tab'], [role='menuitem'], a"
+      "button, [role='button'], [role='tab'], [role='menuitem'], [aria-label], a"
     );
 
-    return Array.from(candidates).some((element) => {
-      const text = element.textContent.trim();
-      const label = element.getAttribute("aria-label") || "";
+    const hasMatchingControl = Array.from(candidates).some((element) => {
+      const text = normalizeText(element.textContent);
+      const label = normalizeText(element.getAttribute("aria-label") || "");
 
       return text === REQUIRED_SHEET_TAB_NAME || label === REQUIRED_SHEET_TAB_NAME;
     });
+
+    if (hasMatchingControl) {
+      return true;
+    }
+
+    return normalizeText(rootDocument.body.innerText || "").includes(
+      REQUIRED_SHEET_TAB_NAME
+    );
   }
 
   function waitForLandingPageSheetTab() {
     const rootDocument = getTopDocument();
+    let observer = null;
+    let intervalId = null;
+    let timeoutId = null;
 
     if (hasLandingPageSheetTab(rootDocument)) {
       hasRequiredSheetTab = true;
@@ -104,30 +119,85 @@
     }
 
     return new Promise((resolve) => {
-      const target = rootDocument.body || rootDocument.documentElement;
+      const stop = (shouldEnable) => {
+        if (observer) {
+          observer.disconnect();
+        }
 
-      if (!target) {
-        resolve(false);
-        return;
+        if (intervalId) {
+          window.clearInterval(intervalId);
+        }
+
+        if (timeoutId) {
+          window.clearTimeout(timeoutId);
+        }
+
+        if (shouldEnable) {
+          hasRequiredSheetTab = true;
+        }
+
+        resolve(shouldEnable);
+      };
+
+      const check = () => {
+        if (hasLandingPageSheetTab(rootDocument)) {
+          stop(true);
+          return true;
+        }
+
+        return false;
+      };
+
+      const startObserver = () => {
+        const target = rootDocument.body || rootDocument.documentElement;
+
+        if (!target) {
+          return false;
+        }
+
+        observer = new MutationObserver(() => {
+          check();
+        });
+
+        observer.observe(target, {
+          childList: true,
+          subtree: true,
+          characterData: true,
+          attributes: true,
+          attributeFilter: ["aria-label", "role", "title"],
+        });
+
+        return true;
+      };
+
+      if (check() || startObserver()) {
+        intervalId = window.setInterval(check, 500);
+      } else {
+        const readyHandler = () => {
+          if (!observer) {
+            startObserver();
+            check();
+          }
+        };
+
+        rootDocument.addEventListener("DOMContentLoaded", readyHandler, {
+          once: true,
+        });
+        rootDocument.defaultView.addEventListener("load", readyHandler, {
+          once: true,
+        });
+        intervalId = window.setInterval(() => {
+          if (!observer) {
+            startObserver();
+          }
+
+          check();
+        }, 500);
       }
 
-      const observer = new MutationObserver(() => {
-        if (hasLandingPageSheetTab(rootDocument)) {
-          hasRequiredSheetTab = true;
-          observer.disconnect();
-          resolve(true);
-        }
-      });
-
-      observer.observe(target, {
-        childList: true,
-        subtree: true,
-      });
-
-      window.setTimeout(() => {
-        observer.disconnect();
-        resolve(false);
-      }, 15000);
+      timeoutId = window.setTimeout(() => {
+        stop(false);
+      }, 120000);
     });
   }
 
