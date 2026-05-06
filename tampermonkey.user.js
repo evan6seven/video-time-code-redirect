@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Video Time Code Redirect
 // @namespace    https://example.local/video-time-code-redirect
-// @version      0.2.4
+// @version      0.2.5
 // @description  Redirect timestamped links on docs.google.com using saved source-to-destination mappings.
 // @match        https://docs.google.com/spreadsheets/*
 // @downloadURL  https://raw.githubusercontent.com/evan6seven/video-time-code-redirect/main/tampermonkey.user.js
@@ -63,6 +63,34 @@
     }
   }
 
+  function isGoogleSheetsHtmlView(url = window.location) {
+    return (
+      url.hostname === "docs.google.com" &&
+      url.pathname.startsWith("/spreadsheets/") &&
+      url.pathname.endsWith("/htmlview")
+    );
+  }
+
+  function getRedirectableUrl(url) {
+    if (!url) {
+      return null;
+    }
+
+    if (
+      (url.hostname === "www.google.com" || url.hostname === "google.com") &&
+      url.pathname === "/url"
+    ) {
+      const wrappedUrl = url.searchParams.get("q") || url.searchParams.get("url");
+      const parsedWrappedUrl = wrappedUrl ? parseUrl(wrappedUrl) : null;
+
+      if (parsedWrappedUrl) {
+        return parsedWrappedUrl;
+      }
+    }
+
+    return url;
+  }
+
   function normalizeUrl(url) {
     const normalized = new URL(url.toString());
     normalized.searchParams.delete("t");
@@ -83,6 +111,10 @@
   }
 
   function hasLandingPageSheetTab(rootDocument = document) {
+    if (isGoogleSheetsHtmlView()) {
+      return true;
+    }
+
     if (!rootDocument.body) {
       return false;
     }
@@ -788,7 +820,7 @@
         return;
       }
 
-      const originalUrl = parseUrl(anchor.href);
+      const originalUrl = getRedirectableUrl(parseUrl(anchor.href));
 
       if (
         !isRedirectEnabled ||
