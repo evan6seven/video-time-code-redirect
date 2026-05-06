@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Video Time Code Redirect
 // @namespace    https://example.local/video-time-code-redirect
-// @version      0.2.5
+// @version      0.2.6
 // @description  Redirect timestamped links on docs.google.com using saved source-to-destination mappings.
 // @match        https://docs.google.com/spreadsheets/*
 // @downloadURL  https://raw.githubusercontent.com/evan6seven/video-time-code-redirect/main/tampermonkey.user.js
@@ -22,6 +22,7 @@
   const ENABLED_KEY = "redirectEnabled";
   const UI_ROOT_ID = "video-time-code-redirect-root";
   const LAUNCHER_ID = "video-time-code-redirect-launcher";
+  const NORMAL_VIEW_BUTTON_ID = "video-time-code-redirect-normal-view";
   const TOGGLE_ID = "video-time-code-redirect-toggle";
   const PANEL_ID = "video-time-code-redirect-panel";
   const RESTORE_SHORTCUT = "Alt+Shift+M";
@@ -69,6 +70,16 @@
       url.pathname.startsWith("/spreadsheets/") &&
       url.pathname.endsWith("/htmlview")
     );
+  }
+
+  function getNormalSheetsViewUrl(url = window.location) {
+    if (!isGoogleSheetsHtmlView(url)) {
+      return null;
+    }
+
+    const normalUrl = new URL(url.toString());
+    normalUrl.pathname = normalUrl.pathname.replace(/\/htmlview$/, "/edit");
+    return normalUrl.toString();
   }
 
   function getRedirectableUrl(url) {
@@ -519,6 +530,24 @@
         box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
       }
 
+      #${NORMAL_VIEW_BUTTON_ID} {
+        border: 0;
+        border-radius: 999px;
+        background: #188038;
+        color: #fff;
+        min-width: 44px;
+        height: 44px;
+        padding: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 22px;
+        font-weight: 700;
+        line-height: 1;
+        cursor: pointer;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+      }
+
       #${TOGGLE_ID} {
         appearance: none;
         -webkit-appearance: none;
@@ -687,6 +716,17 @@
     launcher.textContent = "🔀";
     launcher.title = "Open redirect mappings";
 
+    const normalViewUrl = getNormalSheetsViewUrl();
+    let normalViewButton = null;
+
+    if (normalViewUrl) {
+      normalViewButton = document.createElement("button");
+      normalViewButton.id = NORMAL_VIEW_BUTTON_ID;
+      normalViewButton.type = "button";
+      normalViewButton.textContent = "↗";
+      normalViewButton.title = "Open this sheet in normal view";
+    }
+
     enabledToggle = document.createElement("input");
     enabledToggle.id = TOGGLE_ID;
     enabledToggle.type = "checkbox";
@@ -720,7 +760,13 @@
 
     listContainer = document.createElement("div");
 
-    compactControls.append(launcher, enabledToggle);
+    compactControls.append(launcher);
+
+    if (normalViewButton) {
+      compactControls.append(normalViewButton);
+    }
+
+    compactControls.append(enabledToggle);
     headerActions.append(deleteAllButton);
     header.append(title, headerActions);
     content.append(emptyState, listContainer);
@@ -740,6 +786,12 @@
         });
       }
     });
+
+    if (normalViewButton) {
+      normalViewButton.addEventListener("click", () => {
+        window.location.assign(normalViewUrl);
+      });
+    }
 
     enabledToggle.addEventListener("change", () => {
       isRedirectEnabled = enabledToggle.checked;
