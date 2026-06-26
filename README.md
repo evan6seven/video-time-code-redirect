@@ -6,6 +6,7 @@ Userscript for `docs.google.com` that intercepts links containing a `?t=` query 
 
 - Runs only on `https://docs.google.com/*`
 - Intercepts normal left-clicks on links with a `t` query parameter
+- Opens Kick links through the userscript in a new tab to avoid app handoff
 - Opens redirected links in a new tab
 - Includes a compact on/off toggle beside `🔀` that disables both redirection and new mapping prompts
 - Stores mappings as normalized `source URL -> destination URL`

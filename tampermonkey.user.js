@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Video Time Code Redirect
 // @namespace    https://example.local/video-time-code-redirect
-// @version      0.2.6
+// @version      0.2.7
 // @description  Redirect timestamped links on docs.google.com using saved source-to-destination mappings.
 // @match        https://docs.google.com/spreadsheets/*
 // @downloadURL  https://raw.githubusercontent.com/evan6seven/video-time-code-redirect/main/tampermonkey.user.js
@@ -100,6 +100,10 @@
     }
 
     return url;
+  }
+
+  function isKickUrl(url) {
+    return url.hostname === "kick.com" || url.hostname.endsWith(".kick.com");
   }
 
   function normalizeUrl(url) {
@@ -874,11 +878,13 @@
 
       const originalUrl = getRedirectableUrl(parseUrl(anchor.href));
 
-      if (
-        !isRedirectEnabled ||
-        !originalUrl ||
-        !originalUrl.searchParams.has("t")
-      ) {
+      if (!isRedirectEnabled || !originalUrl) {
+        return;
+      }
+
+      const shouldOpenKickInNewTab = isKickUrl(originalUrl);
+
+      if (!shouldOpenKickInNewTab && !originalUrl.searchParams.has("t")) {
         return;
       }
 
@@ -886,6 +892,11 @@
       event.stopPropagation();
 
       try {
+        if (shouldOpenKickInNewTab) {
+          await openInNewTab(originalUrl.toString());
+          return;
+        }
+
         await redirectLink(originalUrl);
       } catch (error) {
         console.error("Video Time Code Redirect failed:", error);
